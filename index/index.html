@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ブラウザ格闘ゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+JP:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: 'Press Start 2P', 'Noto Sans JP', cursive, sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 1024px;
+            height: 576px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            background: linear-gradient(to bottom, #4a90e2 0%, #87ceeb 60%, #8b4513 60%, #654321 100%);
+        }
+        /* レトロなテキストの縁取り */
+        .text-stroke {
+            text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;
+        }
+        .health-bar-container {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 40px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+        .health-bg {
+            background-color: #ed1c24;
+            height: 30px;
+            width: 400px;
+            border: 4px solid white;
+            position: relative;
+        }
+        .health-fill {
+            background-color: #39ff14;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            transition: width 0.2s ease-out;
+        }
+        #player-health { left: 0; width: 100%; }
+        #enemy-health { right: 0; width: 100%; display: flex; justify-content: flex-end;}
+        
+        #timer {
+            background-color: #222;
+            width: 80px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2rem;
+            border: 4px solid white;
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+        }
+        #display-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            font-size: 4rem;
+            color: #fff;
+            z-index: 20;
+            background-color: rgba(0,0,0,0.4);
+            flex-direction: column;
+            text-align: center;
+        }
+        #controls-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .key-badge {
+            background: #fff;
+            color: #000;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- UI Layer -->
+    <div class="health-bar-container">
+        <div class="health-bg">
+            <div id="player-health" class="health-fill"></div>
+        </div>
+        <div class="health-bg">
+            <!-- CPUの体力バーは右から減るように見せるため、外側のdivで右寄せ処理 -->
+            <div style="width: 100%; display: flex; justify-content: flex-end;">
+                <div id="enemy-health" class="health-fill"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="timer" class="text-stroke">60</div>
+    
+    <div id="display-text" class="text-stroke">
+        <div id="result-message">K.O.</div>
+        <button onclick="location.reload()" class="mt-8 px-6 py-3 bg-red-600 text-white border-4 border-white hover:bg-red-500 cursor-pointer text-xl font-bold" style="font-family: 'Noto Sans JP'">もう一度プレイ</button>
+    </div>
+
+    <!-- 最初の操作説明＆スタート画面 -->
+    <div id="controls-overlay">
+        <h1 class="text-4xl text-yellow-400 mb-8 text-stroke">STREET FIGHTER CLONE</h1>
+        <div class="bg-gray-800 p-8 border-4 border-gray-600 rounded-lg text-center" style="font-family: 'Noto Sans JP'">
+            <h2 class="text-2xl mb-6 font-bold">【 操作方法 】</h2>
+            <div class="flex gap-12 mb-8 text-lg">
+                <div class="text-left space-y-4">
+                    <p><span class="key-badge">A</span> / <span class="key-badge">D</span> : 左右移動</p>
+                    <p><span class="key-badge">W</span> : ジャンプ</p>
+                    <p><span class="key-badge">S</span> : しゃがみ (コマンド用)</p>
+                    <p><span class="key-badge">J</span>:弱 / <span class="key-badge">K</span>:中 / <span class="key-badge">L</span>:強 攻撃</p>
+                    <div class="mt-4 p-4 bg-gray-700 rounded border border-gray-500">
+                        <p class="text-yellow-300 font-bold mb-2">★必殺技コマンド★</p>
+                        <p><span class="key-badge">S</span> 連続 <span class="key-badge">D</span> 連続 <span class="key-badge">J/K/L</span> (右向き)</p>
+                        <p class="text-sm text-gray-300 mt-2">※左向き時は S → A → 攻撃ボタン</p>
+                    </div>
+                </div>
+            </div>
+            <p class="text-gray-400 text-sm mb-6">※相手はCPUです。自動で向かってきます。</p>
+            <button id="start-btn" class="px-8 py-4 bg-yellow-500 text-black border-4 border-white hover:bg-yellow-400 cursor-pointer text-2xl font-bold transition-transform hover:scale-105">GAME START</button>
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas></canvas>
+</div>
+
+<script>
+    const canvas = document.querySelector('canvas');
+    const c = canvas.getContext('2d');
+
+    canvas.width = 1024;
+    canvas.height = 576;
+
+    // ゲームの物理定数
+    const gravity = 0.7;
+    const floorHeight = 100;
+    const groundY = canvas.height - floorHeight;
+
+    const projectiles = []; // 飛び道具を管理する配列
+
+    class Projectile {
+        constructor({ position, velocity, color, owner, damage = 15 }) {
+            this.position = position;
+            this.velocity = velocity;
+            this.color = color;
+            this.owner = owner;
+            this.width = 40;
+            this.height = 40; // 波動拳っぽく少し丸い判定にするため
+            this.damage = damage;
+            this.markedForDeletion = false;
+        }
+
+        draw() {
+            // エネルギー弾の描画
+            c.beginPath();
+            c.arc(this.position.x + this.width/2, this.position.y + this.height/2, 20, 0, Math.PI * 2);
+            c.fillStyle = 'rgba(0, 255, 255, 0.5)'; // 外側のオーラ
+            c.fill();
+            
+            c.beginPath();
+            c.arc(this.position.x + this.width/2, this.position.y + this.height/2, 12, 0, Math.PI * 2);
+            c.fillStyle = 'white'; // 中心
+            c.fill();
+        }
+
+        update() {
+            this.draw();
+            this.position.x += this.velocity.x;
+            this.position.y += this.velocity.y;
+
+            // 画面外に出たら削除フラグを立てる
+            if (this.position.x + this.width < 0 || this.position.x > canvas.width) {
+                this.markedForDeletion = true;
+            }
+        }
+    }
+
+    // キャラクタークラス
+    class Fighter {
+        constructor({ position, velocity, color, isPlayer = true }) {
+            this.position = position;
+            this.velocity = velocity;
+            this.width = 50;
+            this.height = 150;
+            this.color = color;
+            this.isPlayer = isPlayer;
+            this.health = 100;
+            this.isDead = false;
+            
+            // 状態
+            this.facingRight = isPlayer; // P1は右向き、P2は左向きスタート
+            this.isAttacking = false;
+            this.attackCooldown = false;
+            this.specialCooldown = false; // 必殺技のクールダウン
+            this.hitFlashTimer = 0;
+            this.currentAttackDamage = 10;
+
+            // 攻撃判定ボックス
+            this.attackBox = {
+                position: { x: this.position.x, y: this.position.y },
+                width: 100, // リーチ
+                height: 50,
+            };
+        }
+
+        draw() {
+            // ダメージを受けた時のフラッシュ効果
+            if (this.hitFlashTimer > 0) {
+                c.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                this.hitFlashTimer--;
+            } else {
+                c.fillStyle = this.color;
+            }
+
+            // キャラクター本体の描画
+            c.fillRect(this.position.x, this.position.y, this.width, this.height);
+
+            // 目の描画 (向いている方向を示すため)
+            c.fillStyle = 'white';
+            const eyeX = this.facingRight ? this.position.x + this.width - 15 : this.position.x + 5;
+            c.fillRect(eyeX, this.position.y + 20, 10, 10);
+            c.fillStyle = 'black';
+            const pupilX = this.facingRight ? eyeX + 5 : eyeX;
+            c.fillRect(pupilX, this.position.y + 22, 5, 5);
+
+            // 攻撃判定の描画 (デバッグ用・今回は赤いエフェクトとして表示)
+            if (this.isAttacking) {
+                c.fillStyle = 'rgba(255, 0, 0, 0.7)'; // 攻撃の色
+                c.fillRect(
+                    this.attackBox.position.x,
+                    this.attackBox.position.y,
+                    this.attackBox.width,
+                    this.attackBox.height
+                );
+            }
+        }
+
+        update() {
+            this.draw();
+            if (this.isDead) return;
+
+            // 攻撃ボックスの位置を常にキャラクターに追従＆向きに合わせて調整
+            this.attackBox.position.y = this.position.y + 20; // 腕の高さくらい
+            if (this.facingRight) {
+                this.attackBox.position.x = this.position.x + this.width;
+            } else {
+                this.attackBox.position.x = this.position.x - this.attackBox.width;
+            }
+
+            // 位置の更新
+            this.position.x += this.velocity.x;
+            this.position.y += this.velocity.y;
+
+            // 画面端の制限
+            if (this.position.x < 0) this.position.x = 0;
+            if (this.position.x + this.width > canvas.width) this.position.x = canvas.width - this.width;
+
+            // 重力と床の当たり判定
+            if (this.position.y + this.height + this.velocity.y >= groundY) {
+                this.velocity.y = 0;
+                this.position.y = groundY - this.height; // 床にめり込まないように補正
+            } else {
+                this.velocity.y += gravity;
+            }
+        }
+
+        attack(type = 'medium') {
+            if (this.attackCooldown) return;
+            this.isAttacking = true;
+            this.attackCooldown = true;
+            
+            let duration = 100;
+            let cooldown = 400;
+
+            // 弱・中・強で性能を変化させる
+            if (type === 'light') {
+                this.currentAttackDamage = 5;
+                this.attackBox.width = 60;   // リーチ短い
+                duration = 50;               // 発生速い
+                cooldown = 200;              // スキ少ない
+            } else if (type === 'medium') {
+                this.currentAttackDamage = 10;
+                this.attackBox.width = 100;
+                duration = 100;
+                cooldown = 400;
+            } else if (type === 'heavy') {
+                this.currentAttackDamage = 20;
+                this.attackBox.width = 140;  // リーチ長い
+                duration = 150;              // 発生遅め
+                cooldown = 700;              // スキ大きい
+            }
+
+            // 攻撃の持続時間
+            setTimeout(() => {
+                this.isAttacking = false;
+            }, duration);
+
+            // クールダウン
+            setTimeout(() => {
+                this.attackCooldown = false;
+            }, cooldown);
+        }
+
+        // 必殺技（飛び道具）発動
+        specialAttack(type = 'medium') {
+            if (this.specialCooldown) return;
+            this.specialCooldown = true;
+            
+            let speedX = 12;
+            let projectileDamage = 15;
+            
+            // ボタンの強さに応じて弾の速度とダメージを変える
+            if (type === 'light') { speedX = 8; projectileDamage = 10; }
+            else if (type === 'medium') { speedX = 12; projectileDamage = 15; }
+            else if (type === 'heavy') { speedX = 18; projectileDamage = 25; }
+
+            const velocityX = this.facingRight ? speedX : -speedX;
+
+            // 飛び道具を生成して配列に追加
+            projectiles.push(new Projectile({
+                position: {
+                    // キャラクターの少し前から発射
+                    x: this.facingRight ? this.position.x + this.width : this.position.x - 40,
+                    y: this.position.y + 20 // 腕の高さくらい
+                },
+                velocity: { x: velocityX, y: 0 },
+                color: this.color,
+                owner: this,
+                damage: projectileDamage
+            }));
+
+            // 必殺技のクールダウン（連射防止）
+            setTimeout(() => {
+                this.specialCooldown = false;
+            }, 1000);
+        }
+
+        takeHit(damage) {
+            this.health -= damage;
+            this.hitFlashTimer = 5; // 5フレーム白く光る
+            
+            // ノックバック (受けたダメージが大きいほど大きく吹き飛ぶ)
+            const knockback = damage >= 20 ? 12 : (damage >= 10 ? 6 : 3);
+            this.velocity.x = this.facingRight ? -knockback : knockback;
+            setTimeout(() => {
+                if(!keys.a.pressed && !keys.d.pressed && this.isPlayer) this.velocity.x = 0;
+            }, 100);
+
+            if (this.health <= 0) {
+                this.health = 0;
+                this.isDead = true;
+                // 倒れた表現
+                this.height = 30;
+                this.width = 150;
+                this.position.y = groundY - this.height;
+            }
+        }
+    }
+
+    // プレイヤーとCPUのインスタンス化
+    const player = new Fighter({
+        position: { x: 150, y: 0 },
+        velocity: { x: 0, y: 0 },
+        color: '#2563eb', // 青
+        isPlayer: true
+    });
+
+    const enemy = new Fighter({
+        position: { x: 800, y: 0 },
+        velocity: { x: 0, y: 0 },
+        color: '#dc2626', // 赤
+        isPlayer: false
+    });
+
+    // キー入力の管理
+    const keys = {
+        a: { pressed: false },
+        d: { pressed: false },
+        w: { pressed: false },
+        s: { pressed: false } // Sキー（しゃがみ・コマンド始動用）を追加
+    };
+
+    // 当たり判定の関数
+    function rectangularCollision({ rectangle1, rectangle2 }) {
+        return (
+            rectangle1.attackBox.position.x + rectangle1.attackBox.width >= rectangle2.position.x &&
+            rectangle1.attackBox.position.x <= rectangle2.position.x + rectangle2.width &&
+            rectangle1.attackBox.position.y + rectangle1.attackBox.height >= rectangle2.position.y &&
+            rectangle1.attackBox.position.y <= rectangle2.position.y + rectangle2.height
+        );
+    }
+
+    // 飛び道具とキャラクターの当たり判定関数
+    function rectangularCollisionProjectile({ projectile, fighter }) {
+        return (
+            projectile.position.x + projectile.width >= fighter.position.x &&
+            projectile.position.x <= fighter.position.x + fighter.width &&
+            projectile.position.y + projectile.height >= fighter.position.y &&
+            projectile.position.y <= fighter.position.y + fighter.height
+        );
+    }
+
+    // 勝敗判定
+    let timer = 60;
+    let timerId;
+    let gameEnded = false;
+
+    function determineWinner({ player, enemy, timerId }) {
+        clearTimeout(timerId);
+        gameEnded = true;
+        document.querySelector('#display-text').style.display = 'flex';
+        
+        const resultMsg = document.querySelector('#result-message');
+        if (player.health === enemy.health) {
+            resultMsg.innerHTML = 'DRAW';
+        } else if (player.health > enemy.health) {
+            resultMsg.innerHTML = 'YOU WIN!';
+            resultMsg.style.color = '#3b82f6';
+        } else if (player.health < enemy.health) {
+            resultMsg.innerHTML = 'YOU LOSE...';
+            resultMsg.style.color = '#ef4444';
+        }
+    }
+
+    function decreaseTimer() {
+        if (timer > 0 && !gameEnded) {
+            timerId = setTimeout(decreaseTimer, 1000);
+            timer--;
+            document.querySelector('#timer').innerHTML = timer;
+        }
+
+        if (timer === 0 && !gameEnded) {
+            determineWinner({ player, enemy, timerId });
+        }
+    }
+
+    // CPU（AI）のロジック
+    function updateAI() {
+        if (enemy.isDead || gameEnded) {
+            enemy.velocity.x = 0;
+            return;
+        }
+
+        // プレイヤーとの距離と方向を計算
+        const distanceX = player.position.x - enemy.position.x;
+        const absDistance = Math.abs(distanceX);
+        
+        // 常にプレイヤーの方向を向く
+        enemy.facingRight = distanceX > 0;
+
+        // 行動ロジック
+        if (absDistance > 90) {
+            // プレイヤーに近づく
+            enemy.velocity.x = enemy.facingRight ? 3 : -3;
+        } else {
+            // 近づいたら止まる
+            enemy.velocity.x = 0;
+            
+            // ランダムで弱・中・強の攻撃 (フレーム毎に約5%の確率)
+            if (Math.random() < 0.05 && !enemy.attackCooldown) {
+                const rand = Math.random();
+                if (rand < 0.4) enemy.attack('light');
+                else if (rand < 0.8) enemy.attack('medium');
+                else enemy.attack('heavy');
+            }
+        }
+
+        // 距離が離れている時、たまに必殺技を撃つ (約1%の確率)
+        if (absDistance > 200 && Math.random() < 0.01 && !enemy.specialCooldown) {
+            const rand = Math.random();
+            if (rand < 0.33) enemy.specialAttack('light');
+            else if (rand < 0.66) enemy.specialAttack('medium');
+            else enemy.specialAttack('heavy');
+        }
+
+        // プレイヤーがジャンプして近づいてきたら、たまにガード(後退)かジャンプ
+        if (player.velocity.y < 0 && absDistance < 150 && Math.random() < 0.02) {
+            if (enemy.position.y + enemy.height >= groundY) {
+                enemy.velocity.y = -15; // CPUもジャンプ
+            }
+        }
+    }
+
+    // 背景の描画
+    function drawBackground() {
+        // 床 (土・マット)
+        c.fillStyle = '#654321';
+        c.fillRect(0, groundY, canvas.width, floorHeight);
+        
+        // 床のライン
+        c.strokeStyle = '#4a3018';
+        c.lineWidth = 5;
+        c.beginPath();
+        c.moveTo(0, groundY);
+        c.lineTo(canvas.width, groundY);
+        c.stroke();
+    }
+
+    // ゲームループ
+    let animationId;
+    function animate() {
+        animationId = requestAnimationFrame(animate);
+        
+        // 画面クリア (CSSの背景を透過させるためclearRectを使用)
+        c.clearRect(0, 0, canvas.width, canvas.height);
+        
+        drawBackground();
+
+        // キャラクター更新
+        player.update();
+        enemy.update();
+
+        if (gameEnded) return;
+
+        // --- プレイヤーの移動処理 ---
+        player.velocity.x = 0;
+        
+        // プレイヤーが生きている場合のみ操作可能
+        if (!player.isDead) {
+            if (keys.a.pressed && player.lastKey === 'a') {
+                player.velocity.x = -5;
+                player.facingRight = false;
+            } else if (keys.d.pressed && player.lastKey === 'd') {
+                player.velocity.x = 5;
+                player.facingRight = true;
+            } else {
+                // 移動していない時は常に相手の方を向く
+                player.facingRight = player.position.x < enemy.position.x;
+            }
+        }
+
+        // --- CPUの処理 ---
+        updateAI();
+
+        // --- 当たり判定（攻撃） ---
+        // プレイヤーの攻撃がCPUに当たったか
+        if (
+            player.isAttacking &&
+            rectangularCollision({ rectangle1: player, rectangle2: enemy }) &&
+            !enemy.isDead
+        ) {
+            player.isAttacking = false; // 1回の攻撃で多段ヒットさせないため
+            enemy.takeHit(player.currentAttackDamage);
+            document.querySelector('#enemy-health').style.width = enemy.health + '%';
+        }
+
+        // CPUの攻撃がプレイヤーに当たったか
+        if (
+            enemy.isAttacking &&
+            rectangularCollision({ rectangle1: enemy, rectangle2: player }) &&
+            !player.isDead
+        ) {
+            enemy.isAttacking = false;
+            player.takeHit(enemy.currentAttackDamage);
+            document.querySelector('#player-health').style.width = player.health + '%';
+        }
+
+        // --- 飛び道具の更新と当たり判定 ---
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            const p = projectiles[i];
+            p.update();
+
+            // プレイヤーの飛び道具がCPUに当たったか
+            if (p.owner === player && !enemy.isDead && rectangularCollisionProjectile({ projectile: p, fighter: enemy })) {
+                enemy.takeHit(p.damage); 
+                document.querySelector('#enemy-health').style.width = enemy.health + '%';
+                p.markedForDeletion = true; // ヒットしたら消滅
+            }
+
+            // CPUの飛び道具がプレイヤーに当たったか
+            if (p.owner === enemy && !player.isDead && rectangularCollisionProjectile({ projectile: p, fighter: player })) {
+                player.takeHit(p.damage);
+                document.querySelector('#player-health').style.width = player.health + '%';
+                p.markedForDeletion = true;
+            }
+
+            // 画面外やヒット済みで削除フラグが立っているものを配列から消す
+            if (p.markedForDeletion) {
+                projectiles.splice(i, 1);
+            }
+        }
+
+        // --- 勝敗判定（体力0） ---
+        if (enemy.health <= 0 || player.health <= 0) {
+            determineWinner({ player, enemy, timerId });
+        }
+    }
+
+    // 入力履歴を保存するバッファ（必殺技コマンド用）
+    const inputBuffer = [];
+    const bufferTimeLimit = 600; // 600ms以内にコマンドを入力
+
+    // イベントリスナー：キーボードを押した時
+    window.addEventListener('keydown', (event) => {
+        if (player.isDead || gameEnded) return;
+
+        // キー入力をバッファに記録
+        const key = event.key.toLowerCase();
+        const now = Date.now();
+        
+        // S(下), D(右), A(左), J(弱), K(中), L(強) を記録する
+        if (['s', 'd', 'a', 'j', 'k', 'l'].includes(key)) {
+            inputBuffer.push({ key: key, time: now });
+        }
+
+        // 古い入力を削除
+        while (inputBuffer.length > 0 && now - inputBuffer[0].time > bufferTimeLimit) {
+            inputBuffer.shift();
+        }
+
+        // コマンド判定用の文字列を作成（例: "ssddj"）
+        const keysString = inputBuffer.map(k => k.key).join('');
+
+        // 必殺技コマンドの判定 (正規表現で連続入力を許容)
+        // 右向き: s(下) → d(右) → j/k/l のどれか
+        const commandRight = /s+d+([jkl])/;
+        // 左向き: s(下) → a(左) → j/k/l のどれか
+        const commandLeft = /s+a+([jkl])/;
+
+        let commandExecuted = false;
+
+        // 攻撃キー（J, K, L）が押された時にチェック
+        if (['j', 'k', 'l'].includes(key)) {
+            let attackType = 'light';
+            if (key === 'k') attackType = 'medium';
+            if (key === 'l') attackType = 'heavy';
+
+            let match = null;
+            if (player.facingRight) {
+                match = keysString.match(commandRight);
+            } else {
+                match = keysString.match(commandLeft);
+            }
+
+            // マッチしており、かつ最後の入力が押した攻撃キーと一致している場合
+            if (match && match[1] === key) {
+                player.specialAttack(attackType);
+                inputBuffer.length = 0; // 入力クリア
+                commandExecuted = true;
+            }
+
+            // 必殺技コマンドが成立しなかった場合は通常攻撃
+            if (!commandExecuted) {
+                player.attack(attackType);
+            }
+        }
+
+        switch (event.key) {
+            case 'd':
+            case 'D':
+                keys.d.pressed = true;
+                player.lastKey = 'd';
+                break;
+            case 'a':
+            case 'A':
+                keys.a.pressed = true;
+                player.lastKey = 'a';
+                break;
+            case 'w':
+            case 'W':
+                // 地面にいる時だけジャンプ可能
+                if (player.position.y + player.height >= groundY) {
+                    player.velocity.y = -16;
+                }
+                break;
+            case 's':
+            case 'S':
+                keys.s.pressed = true;
+                break;
+        }
+    });
+
+    // イベントリスナー：キーボードを離した時
+    window.addEventListener('keyup', (event) => {
+        switch (event.key) {
+            case 'd':
+            case 'D':
+                keys.d.pressed = false;
+                break;
+            case 'a':
+            case 'A':
+                keys.a.pressed = false;
+                break;
+            case 's':
+            case 'S':
+                keys.s.pressed = false;
+                break;
+        }
+    });
+
+    // ゲーム開始処理
+    document.getElementById('start-btn').addEventListener('click', () => {
+        document.getElementById('controls-overlay').style.display = 'none';
+        decreaseTimer();
+        animate();
+    });
+
+    // 初期描画（スタート画面の後ろに描画しておく）
+    drawBackground();
+    player.update();
+    enemy.update();
+
+</script>
+</body>
+</html>
